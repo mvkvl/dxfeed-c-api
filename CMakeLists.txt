@@ -26,6 +26,7 @@ add_subdirectory(src)
 
 add_subdirectory(tests/CandleSample)
 add_subdirectory(tests/CommandLineSample)
+add_subdirectory(tests/APITest)
 
 if (WIN32)
     add_subdirectory(tests/FullTest)

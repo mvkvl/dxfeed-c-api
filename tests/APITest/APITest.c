@@ -1,11 +1,27 @@
-
-
 #include "DXFeed.h"
 #include "DXErrorCodes.h"
 #include "Logger.h"
 #include <stdio.h>
-#include <Windows.h>
 #include <time.h>
+
+#ifdef _WIN32
+
+#include <windows.h>
+
+void dx_sleep (int milliseconds) {
+	Sleep((DWORD)milliseconds);
+}
+
+#else
+
+void dx_sleep (int milliseconds) {
+	struct timespec ts;
+	ts.tv_sec  = milliseconds / 1000;
+	ts.tv_nsec = (milliseconds % 1000) * 1000000;
+	nanosleep(&ts, NULL);
+}
+
+#endif /* _WIN32 */
 
 const char dxfeed_host[] = "demo.dxfeed.com:7300";
 
@@ -232,7 +248,7 @@ int main (int argc, char* argv[]) {
 	printf("Second listener attached\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep (5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Adding symbols: %ls %ls %ls...\n", symbols_to_add[0], symbols_to_add[1], symbols_to_add[2]);
@@ -246,7 +262,7 @@ int main (int argc, char* argv[]) {
 	printf("Symbols added\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep (5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Detaching second listener...\n");
@@ -260,7 +276,7 @@ int main (int argc, char* argv[]) {
 	printf("Second listener detached\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep (5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Clearing symbols...\n");
@@ -274,12 +290,12 @@ int main (int argc, char* argv[]) {
 	printf("Symbols cleared\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep (5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Removing symbols: %ls %ls...\n", symbols_to_remove[0], symbols_to_remove[1]);
 
-	if (!dxf_remove_symbols(subscription, symbols_to_remove, symbols_to_remove_size)) {
+	if (!dxf_remove_symbols(subscription, (dxf_const_string_t *)symbols_to_remove, symbols_to_remove_size)) {
 		process_last_error();
 
 		return -1;
@@ -288,12 +304,12 @@ int main (int argc, char* argv[]) {
 	printf("Symbols cleared\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep (5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Setting symbols: %ls %ls...\n", symbols_to_set[0], symbols_to_set[1]);
 
-	if (!dxf_set_symbols(subscription, symbols_to_set, symbols_to_set_size)) {
+	if (!dxf_set_symbols(subscription, (dxf_const_string_t *)symbols_to_set, symbols_to_set_size)) {
 		process_last_error();
 
 		return -1;
@@ -302,7 +318,7 @@ int main (int argc, char* argv[]) {
 	printf("Symbols set\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep (5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Retrieving the subscription events...\n");
@@ -330,7 +346,7 @@ int main (int argc, char* argv[]) {
 	printf("Subscription events retrieved\n");
 	printf("Master thread sleeping for %d ms...\n", 5000);
 
-	Sleep(5000);
+	dx_sleep(5000);
 
 	printf("Master thread woke up\n");
 	printf("Adding new symbols: %ls...\n", symbols_to_add_2[0]);
@@ -344,7 +360,7 @@ int main (int argc, char* argv[]) {
 	printf("New symbols added\n");
 	printf("Master thread sleeping for %d ms...\n", 1000000);
 
-	Sleep(1000000);
+	dx_sleep(1000000);
 
 	printf("Master thread woke up\n");
 	printf("Disconnecting from host...\n");
