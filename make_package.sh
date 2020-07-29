@@ -106,15 +106,29 @@ case "${unameOut}" in
 esac
 
 CURRENT_DIR=$(pwd)
-if [ "$machine" == "Mac" ]; then
-  cd lib/libressl/x64/mac
+echo "CURRENT OS: $machine"
+if [ "$machine" = "Mac" ]; then
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
+  cd lib/libressl/mac/x64
   tar xfz libressl.tar.gz
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
+  cd ${CURRENT_DIR}
+else
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
+  echo " >>>>>>>>>>>>>>>>>> NOT A MAC BUILD <<<<<<<<<<<<<<<<<<"
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
 fi
-if [ "$machine" == "Linux" ]; then
-  cd lib/libressl/x64/nix
+if [ "$machine" = "Linux" ]; then
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
+  cd lib/libressl/nix/x64
   tar xfz libressl.tar.gz
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
+  cd ${CURRENT_DIR}
+else
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
+  echo " >>>>>>>>>>>>>>>>>> NOT A NIX BUILD <<<<<<<<<<<<<<<<<<"
+  echo " >>>>>>>>>>>>>>>>>> !!!!!!!!!!!!!!! <<<<<<<<<<<<<<<<<<"
 fi
-cd ${CURRENT_DIR}
 
 # === BUILD ALL TARGETS ===
 
