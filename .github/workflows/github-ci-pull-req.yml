@@ -19,20 +19,20 @@ env:
 jobs:
 
   # --------------------------- CI TEST
-#  test:
-#    runs-on: ubuntu-latest
-#    name: ci test
-#    steps:
-#      - uses: actions/checkout@master
-#      - name: Set env
-#        run: |
-#          echo ::set-env name=RELEASE_VERSION::${BUILD_VERSION}
-#          echo ::set-env name=ARTIFACT::$(echo ${DOCS_ARTIFACT_TEMPLATE} | sed "s/%VERSION%/${BUILD_VERSION}/g")
-#      - name: Check env
-#        run: |
-#          echo Github Ref: ${GITHUB_REF}
-#          echo Artifact  : ${{ env.ARTIFACT }}
-#          echo Release   : ${{ env.RELEASE_VERSION }}
+  test:
+    runs-on: ubuntu-latest
+    name: ci test
+    steps:
+      - uses: actions/checkout@master
+      - name: Set env
+        run: |
+          echo ::set-env name=RELEASE_VERSION::${BUILD_VERSION}
+          echo ::set-env name=ARTIFACT::$(echo ${DOCS_ARTIFACT_TEMPLATE} | sed "s/%VERSION%/${BUILD_VERSION}/g")
+      - name: Check env
+        run: |
+          echo Github Ref: ${GITHUB_REF}
+          echo Artifact  : ${{ env.ARTIFACT }}
+          echo Release   : ${{ env.RELEASE_VERSION }}
 
 
 # --------------------------- BUILD DOCUMENTATION
