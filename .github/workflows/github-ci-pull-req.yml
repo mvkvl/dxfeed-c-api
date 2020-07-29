@@ -19,23 +19,20 @@ env:
 jobs:
 
   # --------------------------- CI TEST
-  test:
-    runs-on: ubuntu-latest
-    name: ci test
-    steps:
-
-      - name: Set env
-        run: |
-          echo ::set-env name=RELEASE_VERSION::${BUILD_VERSION}
-          echo ::set-env name=ARTIFACT::$(echo ${DOCS_ARTIFACT_TEMPLATE} | sed "s/%VERSION%/${BUILD_VERSION}/g")
-
-      - name: Check env
-        run: |
-          echo Github Ref: ${GITHUB_REF}
-          echo Artifact  : ${{ env.ARTIFACT }}
-          echo Release   : ${{ env.RELEASE_VERSION }}
-
-      - uses: actions/checkout@master
+#  test:
+#    runs-on: ubuntu-latest
+#    name: ci test
+#    steps:
+#      - name: Set env
+#        run: |
+#          echo ::set-env name=RELEASE_VERSION::${BUILD_VERSION}
+#          echo ::set-env name=ARTIFACT::$(echo ${DOCS_ARTIFACT_TEMPLATE} | sed "s/%VERSION%/${BUILD_VERSION}/g")
+#      - name: Check env
+#        run: |
+#          echo Github Ref: ${GITHUB_REF}
+#          echo Artifact  : ${{ env.ARTIFACT }}
+#          echo Release   : ${{ env.RELEASE_VERSION }}
+#      - uses: actions/checkout@master
 
 
 # --------------------------- BUILD DOCUMENTATION
@@ -51,19 +48,13 @@ jobs:
         run: |
           echo Artifact: ${{ env.ARTIFACT }}
           echo Release : ${{ env.RELEASE_VERSION }}
-
       - uses: actions/checkout@master
-
-#      - name: Build documentation
-#        uses: ./.github/actions/doxygen
-#        id: build-docs
-#        with:
-#          artifact: ${{ env.ARTIFACT }}
-#          release: ${{ env.RELEASE_VERSION }}
-#      - uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}.zip
-#          path: artifact/${{ env.ARTIFACT }}.zip
+      - name: Build documentation
+        uses: ./.github/actions/doxygen
+        id: build-docs
+        with:
+          artifact: ${{ env.ARTIFACT }}
+          release: ${{ env.RELEASE_VERSION }}
 
 
 # --------------------------- BUILD LINUX LIBRARY (WITH TLS SUPPORT)
@@ -79,19 +70,13 @@ jobs:
         run: |
           echo Artifact: ${{ env.ARTIFACT }}
           echo Release : ${{ env.RELEASE_VERSION }}
-
       - uses: actions/checkout@master
-
-#      - name: Build linux library (TLS)
-#        uses: ./.github/actions/linux
-#        id: build-linux
-#        with:
-#          artifact: ${{ env.ARTIFACT }}
-#          release:  ${{ env.RELEASE_VERSION }}
-#      - uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}.zip
-#          path: artifact/${{ env.ARTIFACT }}.zip
+      - name: Build linux library (TLS)
+        uses: ./.github/actions/linux
+        id: build-linux
+        with:
+          artifact: ${{ env.ARTIFACT }}
+          release:  ${{ env.RELEASE_VERSION }}
 
 
 # --------------------------- BUILD LINUX LIBRARY (WITHOUT TLS SUPPORT)
@@ -107,20 +92,14 @@ jobs:
         run: |
           echo Artifact: ${{ env.ARTIFACT }}
           echo Release : ${{ env.RELEASE_VERSION }}
-
       - uses: actions/checkout@master
-
-#      - name: Build linux library (no TLS)
-#        uses: ./.github/actions/linux
-#        id: build-linux-nt
-#        with:
-#          artifact: ${{ env.ARTIFACT }}
-#          release:  ${{ env.RELEASE_VERSION }}
-#          notls: true
-#      - uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}-no-tls.zip
-#          path: artifact/${{ env.ARTIFACT }}-no-tls.zip
+      - name: Build linux library (no TLS)
+        uses: ./.github/actions/linux
+        id: build-linux-nt
+        with:
+          artifact: ${{ env.ARTIFACT }}
+          release:  ${{ env.RELEASE_VERSION }}
+          notls: true
 
 
 # --------------------------- BUILD OLD LINUX (CENTOS 6.1) LIBRARY (WITH TLS SUPPORT)
@@ -136,19 +115,13 @@ jobs:
         run: |
           echo Artifact: ${{ env.ARTIFACT }}
           echo Release : ${{ env.RELEASE_VERSION }}
-
       - uses: actions/checkout@master
-
-#      - name: Build centos library (TLS)
-#        uses: ./.github/actions/centos
-#        id: build-centos
-#        with:
-#          artifact: ${{ env.ARTIFACT }}
-#          release:  ${{ env.RELEASE_VERSION }}
-#      - uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}.zip
-#          path: artifact/${{ env.ARTIFACT }}.zip
+      - name: Build centos library (TLS)
+        uses: ./.github/actions/centos
+        id: build-centos
+        with:
+          artifact: ${{ env.ARTIFACT }}
+          release:  ${{ env.RELEASE_VERSION }}
 
 
 # --------------------------- BUILD OLD LINUX (CENTOS 6.1) LIBRARY (WITHOUT TLS SUPPORT)
@@ -164,20 +137,14 @@ jobs:
         run: |
           echo Artifact: ${{ env.ARTIFACT }}
           echo Release : ${{ env.RELEASE_VERSION }}
-
       - uses: actions/checkout@master
-
-#      - name: Build centos library (no TLS)
-#        uses: ./.github/actions/centos
-#        id: build-centos-nt
-#        with:
-#          artifact: ${{ env.ARTIFACT }}
-#          release:  ${{ env.RELEASE_VERSION }}
-#          notls: true
-#      - uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}-no-tls.zip
-#          path: artifact/${{ env.ARTIFACT }}-no-tls.zip
+      - name: Build centos library (no TLS)
+        uses: ./.github/actions/centos
+        id: build-centos-nt
+        with:
+          artifact: ${{ env.ARTIFACT }}
+          release:  ${{ env.RELEASE_VERSION }}
+          notls: true
 
 
 # --------------------------- BUILD WINDOWS LIBRARY [ VS2015 ]
@@ -191,11 +158,6 @@ jobs:
           echo "::set-env name=RELEASE_VERSION::$("$Env:BUILD_VERSION")"
           echo "::set-env name=ARTIFACT::$(echo $Env:WINDOWS_ARTIFACT_TEMPLATE | %{$_ -replace '#VERSION#', $Env:BUILD_VERSION })"
           echo "::set-env name=WB_ARTIFACT::$(echo $Env:WINDOWS_BUILD_TEMPLATE | %{$_ -replace '#VERSION#', $Env:BUILD_VERSION })"
-#          echo "::set-env name=RELEASE_VERSION::$("$Env:GITHUB_REF".Substring(10))"
-#          echo "::set-env name=ARTIFACT::$(echo $Env:WINDOWS_ARTIFACT_TEMPLATE | %{$_ -replace '#VERSION#', $("$Env:GITHUB_REF".Substring(10)) })"
-#          echo "::set-env name=WB_ARTIFACT::$(echo $Env:WINDOWS_BUILD_TEMPLATE | %{$_ -replace '#VERSION#', $("$Env:GITHUB_REF".Substring(10)) })"
-
-#  $(echo $Env:WINDOWS_ARTIFACT_TEMPLATE | %{$_ -replace '#VERSION#', $Env:BUILD_VERSION })"
 
       - name: Check env
         run: |
@@ -205,45 +167,19 @@ jobs:
 
       - uses: actions/checkout@master
 
-#      - name: Free disk space for build image
-#        run: |
-#          docker rm $(docker ps -aq)
-#          docker image rm $(docker image ls -q)
+      - name: Free disk space for build image
+        run: |
+          docker rm $(docker ps -aq)
+          docker image rm $(docker image ls -q)
 
-#      - name: Pull build image
-#        run: |
-#          docker pull ${{ env.WIN_BUILDER_IMAGE }}
-#
-#      - name: Make artifacts directory
-#        run: |
-#          mkdir artifact
-#
-#      - name: Build windows (no TLS)
-#        run: |
-#          docker run --rm -v "${pwd}:${{ env.WIN_SRC_DIR }}" -e SRCDIR="${{ env.WIN_SRC_DIR }}" -e FLAGS="rebuild no-test no-tls" -e RELEASE=${{ env.RELEASE_VERSION }} ${{ env.WIN_BUILDER_IMAGE }}
+      - name: Pull build image
+        run: |
+          docker pull ${{ env.WIN_BUILDER_IMAGE }}
 
-#      - name: Copy build artifact (windows no-tls)
-#        run: |
-#          cp build\${{ env.WB_ARTIFACT }}-no-tls.zip artifact\${{ env.ARTIFACT }}-no-tls.zip
-#          ls artifact\
+      - name: Build windows (no TLS)
+        run: |
+          docker run --rm -v "${pwd}:${{ env.WIN_SRC_DIR }}" -e SRCDIR="${{ env.WIN_SRC_DIR }}" -e FLAGS="rebuild no-test no-tls" -e RELEASE=${{ env.RELEASE_VERSION }} ${{ env.WIN_BUILDER_IMAGE }}
 
-#      - name: Build windows (TLS)
-#        run: |
-#          docker run --rm -v "${pwd}:${{ env.WIN_SRC_DIR }}" -e SRCDIR="${{ env.WIN_SRC_DIR }}" -e FLAGS="rebuild no-test" -e RELEASE=${{ env.RELEASE_VERSION }} ${{ env.WIN_BUILDER_IMAGE }}
-
-#      - name: Copy build artifact (windows)
-#        run: |
-#          cp build\${{ env.WB_ARTIFACT }}.zip artifact\${{ env.ARTIFACT }}.zip
-#          ls artifact\
-#
-#      - name: Upload build artifact (no TLS)
-#        uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}-no-tls.zip
-#          path: artifact/${{ env.ARTIFACT }}-no-tls.zip
-#
-#      - name: Upload build artifact (TLS)
-#        uses: actions/upload-artifact@v1
-#        with:
-#          name: ${{ env.ARTIFACT }}.zip
-#          path: artifact/${{ env.ARTIFACT }}.zip
+      - name: Build windows (TLS)
+        run: |
+          docker run --rm -v "${pwd}:${{ env.WIN_SRC_DIR }}" -e SRCDIR="${{ env.WIN_SRC_DIR }}" -e FLAGS="rebuild no-test" -e RELEASE=${{ env.RELEASE_VERSION }} ${{ env.WIN_BUILDER_IMAGE }}
