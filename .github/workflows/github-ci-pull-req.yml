@@ -188,7 +188,7 @@ jobs:
 
       - name: Set env
         run: |
-          echo ::set-env name=RELEASE_VERSION::$("$Env:BUILD_VERSION")"
+          echo "::set-env name=RELEASE_VERSION::$("$Env:BUILD_VERSION")"
 #          echo "::set-env name=ARTIFACT::$(echo $Env:WINDOWS_ARTIFACT_TEMPLATE | %{$_ -replace '#VERSION#', $Env:BUILD_VERSION })"
 #          echo "::set-env name=WB_ARTIFACT::$(echo $Env:WINDOWS_BUILD_TEMPLATE | %{$_ -replace '#VERSION#', $Env:BUILD_VERSION })"
 #          echo "::set-env name=RELEASE_VERSION::$("$Env:GITHUB_REF".Substring(10))"
