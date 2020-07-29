@@ -95,6 +95,27 @@ echo "Start building package $VERSION"
 # === UPDATE VERSION ===
 APP_VERSION=$VERSION
 
+# === prepare LIBRESSL ===
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)     machine=Linux;;
+    Darwin*)    machine=Mac;;
+    CYGWIN*)    machine=Cygwin;;
+    MINGW*)     machine=MinGw;;
+    *)          machine="UNKNOWN:${unameOut}"
+esac
+
+CURRENT_DIR=$(pwd)
+if [ "$machine" == "Mac" ]; then
+  cd lib/libressl/x64/mac
+  tar xfz libressl.tar.gz
+fi
+if [ "$machine" == "Linux" ]; then
+  cd lib/libressl/x64/nix
+  tar xfz libressl.tar.gz
+fi
+cd ${CURRENT_DIR}
+
 # === BUILD ALL TARGETS ===
 
 export APP_VERSION
