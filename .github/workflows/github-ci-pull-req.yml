@@ -1,6 +1,6 @@
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
 
 name: Build
 
@@ -15,6 +15,7 @@ env:
   WIN_SRC_DIR: "C:\\dxfeed-c-api"
   RELEASE_PREFIX: "dxFeed C API "
   BUILD_VERSION: 0.0.0-pr
+  BUILD_TAG: latest-github-build
 
 jobs:
 
@@ -39,7 +40,6 @@ jobs:
           artifact: ${{ env.ARTIFACT }}
           release: ${{ env.RELEASE_VERSION }}
 
-
 # --------------------------- BUILD LINUX LIBRARY (WITH TLS SUPPORT)
   build_linux_tls:
     runs-on: ubuntu-latest
@@ -60,7 +60,6 @@ jobs:
         with:
           artifact: ${{ env.ARTIFACT }}
           release:  ${{ env.RELEASE_VERSION }}
-
 
 # --------------------------- BUILD LINUX LIBRARY (WITHOUT TLS SUPPORT)
   build_linux_no_tls:
@@ -84,7 +83,6 @@ jobs:
           release:  ${{ env.RELEASE_VERSION }}
           notls: true
 
-
 # --------------------------- BUILD OLD LINUX (CENTOS 6.1) LIBRARY (WITH TLS SUPPORT)
   build_centos_tls:
     runs-on: ubuntu-latest
@@ -105,7 +103,6 @@ jobs:
         with:
           artifact: ${{ env.ARTIFACT }}
           release:  ${{ env.RELEASE_VERSION }}
-
 
 # --------------------------- BUILD OLD LINUX (CENTOS 6.1) LIBRARY (WITHOUT TLS SUPPORT)
   build_centos_no_tls:
@@ -128,7 +125,6 @@ jobs:
           artifact: ${{ env.ARTIFACT }}
           release:  ${{ env.RELEASE_VERSION }}
           notls: true
-
 
 # --------------------------- BUILD MACOSX LIBRARY (WITH TLS SUPPORT)
   build_macos_tls:
@@ -159,6 +155,9 @@ jobs:
 
 
 
+
+
+
 # --------------------------- BUILD MACOSX LIBRARY (WITHOUT TLS SUPPORT)
   build_macos_no_tls:
     runs-on: macos-latest
@@ -184,6 +183,9 @@ jobs:
           ls ./build
           mv build/dxfeed-c-api-${{ env.RELEASE_VERSION }}-no-tls.zip build/${{ env.ARTIFACT }}-no-tls.zip
           ls ./build
+
+
+
 
 
 
@@ -223,3 +225,17 @@ jobs:
       - name: Build windows (TLS)
         run: |
           docker run --rm -v "${pwd}:${{ env.WIN_SRC_DIR }}" -e SRCDIR="${{ env.WIN_SRC_DIR }}" -e FLAGS="rebuild no-test" -e RELEASE=${{ env.RELEASE_VERSION }} ${{ env.WIN_BUILDER_IMAGE }}
+
+
+  tag_version:
+      needs: [build_docs]
+      runs-on: ubuntu-latest
+      name: tag github build
+      steps:
+        - uses: actions/checkout@main
+        - name: Tag Build
+          run: |
+            echo "BUILD TAG: ${BUILD_TAG}"
+            git tag -f ${BUILD_TAG} && git push -f origin ${BUILD_TAG}
+
+# , build_linux_tls, build_linux_no_tls, build_centos_tls, build_centos_no_tls, build_macos_tls, build_macos_no_tls, build_windows
