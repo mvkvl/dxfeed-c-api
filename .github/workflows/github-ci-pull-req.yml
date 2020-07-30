@@ -1,6 +1,8 @@
 on:
   pull_request:
     types: [opened, reopened]
+  push:
+    branches: 'refs/pull/[0-9]+/merge'
 
 name: Build
 
