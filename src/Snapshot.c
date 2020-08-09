@@ -17,6 +17,11 @@
  *
  */
 
+#include "Snapshot.h"
+
+#include <stdlib.h>
+#include <wchar.h>
+
 #include "ConnectionContextData.h"
 #include "DXAlgorithms.h"
 #include "DXErrorCodes.h"
@@ -25,7 +30,7 @@
 #include "EventManager.h"
 #include "EventSubscription.h"
 #include "Logger.h"
-#include "Snapshot.h"
+#include "map.h"
 
 /* -------------------------------------------------------------------------- */
 /*
@@ -33,12 +38,7 @@
  */
 /* -------------------------------------------------------------------------- */
 
-typedef enum {
-	dx_status_unknown = 0,
-	dx_status_begin,
-	dx_status_full,
-	dx_status_pending
-} dx_snapshot_status_t;
+typedef enum { dx_status_unknown = 0, dx_status_begin, dx_status_full, dx_status_pending } dx_snapshot_status_t;
 
 typedef struct {
 	bool incremental;
@@ -87,7 +87,8 @@ typedef struct {
 typedef struct {
 	dx_mutex_t guard;
 
-	dxf_ulong_t key;
+	//	dxf_ulong_t key;
+	char* key;
 	dxf_subscription_t subscription;
 	dx_record_info_id_t record_info_id;
 	dx_event_id_t event_id;
@@ -111,11 +112,13 @@ typedef struct {
  * Use DX_ARRAY_BINARY_SEARCH with dx_snapshot_comparator for searching elements and before
  * inserting new once
  */
-typedef struct {
-	dx_snapshot_data_ptr_t* elements;
-	size_t size;
-	size_t capacity;
-} dx_snapshots_data_array_t;
+// typedef struct {
+//	dx_snapshot_data_ptr_t* elements;
+//	size_t size;
+//	size_t capacity;
+//} dx_snapshots_data_array_t;
+
+typedef map_t_ext(char*, dx_snapshot_data_ptr_t*) dx_snapshots_data_map_t;
 
 const dxf_snapshot_t dx_invalid_snapshot = (dxf_snapshot_t)NULL;
 
@@ -132,14 +135,14 @@ const dxf_snapshot_t dx_invalid_snapshot = (dxf_snapshot_t)NULL;
 typedef struct {
 	dxf_connection_t connection;
 	dx_mutex_t guard;
-	dx_snapshots_data_array_t snapshots_array;
+	//	dx_snapshots_data_array_t snapshots_array;
+	dx_snapshots_data_map_t snapshots_map;
 	int fields_flags;
 } dx_snapshot_subscription_connection_context_t;
 
-#define GUARD_FIELD_FLAG    (0x1)
+#define GUARD_FIELD_FLAG (0x1)
 
-#define CTX(context) \
-	((dx_snapshot_subscription_connection_context_t*)context)
+#define CTX(context) ((dx_snapshot_subscription_connection_context_t*)context)
 
 /* -------------------------------------------------------------------------- */
 
@@ -180,7 +183,8 @@ DX_CONNECTION_SUBSYS_INIT_PROTO(dx_ccs_snapshot_subscription) {
 
 DX_CONNECTION_SUBSYS_DEINIT_PROTO(dx_ccs_snapshot_subscription) {
 	bool res = true;
-	dx_snapshot_subscription_connection_context_t* context = dx_get_subsystem_data(connection, dx_ccs_snapshot_subscription, &res);
+	dx_snapshot_subscription_connection_context_t* context =
+		dx_get_subsystem_data(connection, dx_ccs_snapshot_subscription, &res);
 
 	if (context == NULL) {
 		return res;
@@ -191,31 +195,39 @@ DX_CONNECTION_SUBSYS_DEINIT_PROTO(dx_ccs_snapshot_subscription) {
 
 /* -------------------------------------------------------------------------- */
 
-DX_CONNECTION_SUBSYS_CHECK_PROTO(dx_ccs_snapshot_subscription) {
-	return true;
-}
+DX_CONNECTION_SUBSYS_CHECK_PROTO(dx_ccs_snapshot_subscription) { return true; }
 
 /* -------------------------------------------------------------------------- */
 
 bool dx_clear_snapshot_subscription_connection_context(dx_snapshot_subscription_connection_context_t* context) {
 	bool res = true;
-	size_t i = 0;
-
-	for (; i < context->snapshots_array.size; ++i) {
-		res = dx_free_snapshot_data((dx_snapshot_data_t*)context->snapshots_array.elements[i]) && res;
+	map_iter_t iter = map_iter(&(context->snapshots_map));
+	char* key;
+	while ((key = map_next_(&(context->snapshots_map), &iter))) {
+		dx_snapshot_data_ptr_t* value = *map_get(&(context->snapshots_map), key);
+		if (NULL != value) res = dx_free_snapshot_data(value) && res;
 	}
 
 	if (IS_FLAG_SET(context->fields_flags, GUARD_FIELD_FLAG)) {
 		res = dx_mutex_destroy(&(context->guard)) && res;
 	}
 
-	if (context->snapshots_array.elements != NULL) {
-		dx_free(context->snapshots_array.elements);
-	}
-
+	map_deinit(&(context->snapshots_map));
 	dx_free(context);
-
 	return res;
+
+	//	size_t i = 0;
+	//	for (; i < context->snapshots_array.size; ++i) {
+	//		res = dx_free_snapshot_data((dx_snapshot_data_t*)context->snapshots_array.elements[i]) && res;
+	//	}
+	//	if (IS_FLAG_SET(context->fields_flags, GUARD_FIELD_FLAG)) {
+	//		res = dx_mutex_destroy(&(context->guard)) && res;
+	//	}
+	//	if (context->snapshots_array.elements != NULL) {
+	//		dx_free(context->snapshots_array.elements);
+	//	}
+	//	dx_free(context);
+	//	return res;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -229,113 +241,101 @@ int dx_snapshot_records_comparator(dxf_time_int_field_t t1, dxf_time_int_field_t
 }
 
 bool dx_snapshot_insert_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
-								dxf_event_data_t obj, const size_t position) {
+							   dxf_event_data_t obj, const size_t position) {
 	bool failed = false;
 	switch (snapshot_data->event_id) {
-	case dx_eid_order:
-		DX_ARRAY_INSERT(recs->records, dxf_order_t, *((dxf_order_t*)obj), position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_candle:
-		DX_ARRAY_INSERT(recs->records, dxf_candle_t, *((dxf_candle_t*)obj), position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_spread_order:
-		DX_ARRAY_INSERT(recs->records, dxf_order_t, *((dxf_order_t*)obj), position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_time_and_sale:
-		DX_ARRAY_INSERT(recs->records, dxf_time_and_sale_t, *((dxf_time_and_sale_t*)obj), position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_greeks:
-		DX_ARRAY_INSERT(recs->records, dxf_greeks_t, *((dxf_greeks_t*)obj), position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_series:
-		DX_ARRAY_INSERT(recs->records, dxf_series_t, *((dxf_series_t*)obj), position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	default:
-		return dx_set_error_code(dx_ssec_invalid_event_id);
+		case dx_eid_order:
+			DX_ARRAY_INSERT(recs->records, dxf_order_t, *((dxf_order_t*)obj), position, dx_capacity_manager_halfer,
+							failed);
+			break;
+		case dx_eid_candle:
+			DX_ARRAY_INSERT(recs->records, dxf_candle_t, *((dxf_candle_t*)obj), position, dx_capacity_manager_halfer,
+							failed);
+			break;
+		case dx_eid_spread_order:
+			DX_ARRAY_INSERT(recs->records, dxf_order_t, *((dxf_order_t*)obj), position, dx_capacity_manager_halfer,
+							failed);
+			break;
+		case dx_eid_time_and_sale:
+			DX_ARRAY_INSERT(recs->records, dxf_time_and_sale_t, *((dxf_time_and_sale_t*)obj), position,
+							dx_capacity_manager_halfer, failed);
+			break;
+		case dx_eid_greeks:
+			DX_ARRAY_INSERT(recs->records, dxf_greeks_t, *((dxf_greeks_t*)obj), position, dx_capacity_manager_halfer,
+							failed);
+			break;
+		case dx_eid_series:
+			DX_ARRAY_INSERT(recs->records, dxf_series_t, *((dxf_series_t*)obj), position, dx_capacity_manager_halfer,
+							failed);
+			break;
+		default:
+			return dx_set_error_code(dx_ssec_invalid_event_id);
 	}
 
 	return !failed;
 }
 
 bool dx_snapshot_delete_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
-								const size_t position) {
+							   const size_t position) {
 	bool failed = false;
 	switch (snapshot_data->event_id) {
-	case dx_eid_order:
-		DX_ARRAY_DELETE(recs->records, dxf_order_t, position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_candle:
-		DX_ARRAY_DELETE(recs->records, dxf_candle_t, position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_spread_order:
-		DX_ARRAY_DELETE(recs->records, dxf_order_t, position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_time_and_sale:
-		DX_ARRAY_DELETE(recs->records, dxf_time_and_sale_t, position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_greeks:
-		DX_ARRAY_DELETE(recs->records, dxf_greeks_t, position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	case dx_eid_series:
-		DX_ARRAY_DELETE(recs->records, dxf_series_t, position,
-			dx_capacity_manager_halfer, failed);
-		break;
-	default:
-		return dx_set_error_code(dx_ssec_invalid_event_id);
+		case dx_eid_order:
+			DX_ARRAY_DELETE(recs->records, dxf_order_t, position, dx_capacity_manager_halfer, failed);
+			break;
+		case dx_eid_candle:
+			DX_ARRAY_DELETE(recs->records, dxf_candle_t, position, dx_capacity_manager_halfer, failed);
+			break;
+		case dx_eid_spread_order:
+			DX_ARRAY_DELETE(recs->records, dxf_order_t, position, dx_capacity_manager_halfer, failed);
+			break;
+		case dx_eid_time_and_sale:
+			DX_ARRAY_DELETE(recs->records, dxf_time_and_sale_t, position, dx_capacity_manager_halfer, failed);
+			break;
+		case dx_eid_greeks:
+			DX_ARRAY_DELETE(recs->records, dxf_greeks_t, position, dx_capacity_manager_halfer, failed);
+			break;
+		case dx_eid_series:
+			DX_ARRAY_DELETE(recs->records, dxf_series_t, position, dx_capacity_manager_halfer, failed);
+			break;
+		default:
+			return dx_set_error_code(dx_ssec_invalid_event_id);
 	}
 
 	return !failed;
 }
 
-bool dx_snapshot_set_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
-							dxf_event_data_t obj, const size_t position) {
+bool dx_snapshot_set_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs, dxf_event_data_t obj,
+							const size_t position) {
 	switch (snapshot_data->event_id) {
-	case dx_eid_order:
-		dx_memcpy(&(((dxf_order_t*)recs->records.elements)[position]), (dxf_order_t*)obj,
-			sizeof(dxf_order_t));
-		break;
-	case dx_eid_candle:
-		dx_memcpy(&(((dxf_candle_t*)recs->records.elements)[position]), (dxf_candle_t*)obj,
-			sizeof(dxf_candle_t));
-		break;
-	case dx_eid_spread_order:
-		dx_memcpy(&(((dxf_order_t*)recs->records.elements)[position]), (dxf_order_t*)obj,
-			sizeof(dxf_order_t));
-		break;
-	case dx_eid_time_and_sale:
-		dx_memcpy(&(((dxf_time_and_sale_t*)recs->records.elements)[position]), (dxf_time_and_sale_t*)obj,
-			sizeof(dxf_time_and_sale_t));
-		break;
-	case dx_eid_greeks:
-		dx_memcpy(&(((dxf_greeks_t*)recs->records.elements)[position]), (dxf_greeks_t*)obj,
-			sizeof(dxf_greeks_t));
-		break;
-	case dx_eid_series:
-		dx_memcpy(&(((dxf_series_t*)recs->records.elements)[position]), (dxf_series_t*)obj,
-			sizeof(dxf_series_t));
-		break;
-	default:
-		return dx_set_error_code(dx_ssec_invalid_event_id);
+		case dx_eid_order:
+			dx_memcpy(&(((dxf_order_t*)recs->records.elements)[position]), (dxf_order_t*)obj, sizeof(dxf_order_t));
+			break;
+		case dx_eid_candle:
+			dx_memcpy(&(((dxf_candle_t*)recs->records.elements)[position]), (dxf_candle_t*)obj, sizeof(dxf_candle_t));
+			break;
+		case dx_eid_spread_order:
+			dx_memcpy(&(((dxf_order_t*)recs->records.elements)[position]), (dxf_order_t*)obj, sizeof(dxf_order_t));
+			break;
+		case dx_eid_time_and_sale:
+			dx_memcpy(&(((dxf_time_and_sale_t*)recs->records.elements)[position]), (dxf_time_and_sale_t*)obj,
+					  sizeof(dxf_time_and_sale_t));
+			break;
+		case dx_eid_greeks:
+			dx_memcpy(&(((dxf_greeks_t*)recs->records.elements)[position]), (dxf_greeks_t*)obj, sizeof(dxf_greeks_t));
+			break;
+		case dx_eid_series:
+			dx_memcpy(&(((dxf_series_t*)recs->records.elements)[position]), (dxf_series_t*)obj, sizeof(dxf_series_t));
+			break;
+		default:
+			return dx_set_error_code(dx_ssec_invalid_event_id);
 	}
 
 	return true;
 }
 
-bool dx_snapshot_add_event_record(dx_snapshot_data_ptr_t snapshot_data,
-								dx_snapshot_records_ptr_t recs,
-								const dxf_event_params_t* event_params,
-								const dxf_event_data_t event_row, const size_t position) {
+bool dx_snapshot_add_event_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
+								  const dxf_event_params_t* event_params, const dxf_event_data_t event_row,
+								  const size_t position) {
 	bool failed = false;
 	dxf_event_data_t obj = NULL;
 	dx_event_copy_function_t clone_event = dx_get_event_copy_function(snapshot_data->event_id);
@@ -359,8 +359,8 @@ bool dx_snapshot_add_event_record(dx_snapshot_data_ptr_t snapshot_data,
 	}
 
 	/* store time_int_field */
-	DX_ARRAY_INSERT(recs->record_time_ints, dxf_time_int_field_t,
-		event_params->time_int_field, position, dx_capacity_manager_halfer, failed);
+	DX_ARRAY_INSERT(recs->record_time_ints, dxf_time_int_field_t, event_params->time_int_field, position,
+					dx_capacity_manager_halfer, failed);
 	if (failed) {
 		dx_string_array_free(string_buffer);
 		dx_free((void*)string_buffer);
@@ -369,14 +369,13 @@ bool dx_snapshot_add_event_record(dx_snapshot_data_ptr_t snapshot_data,
 	}
 
 	/* store string buffer */
-	DX_ARRAY_INSERT(recs->record_buffers, dx_string_array_ptr_t, string_buffer,
-		position, dx_capacity_manager_halfer, failed);
+	DX_ARRAY_INSERT(recs->record_buffers, dx_string_array_ptr_t, string_buffer, position, dx_capacity_manager_halfer,
+					failed);
 	if (failed) {
 		dx_string_array_free(string_buffer);
 		dx_free((void*)string_buffer);
 		dx_snapshot_delete_record(snapshot_data, recs, position);
-		DX_ARRAY_DELETE(recs->record_time_ints, dxf_time_int_field_t, position,
-			dx_capacity_manager_halfer, failed);
+		DX_ARRAY_DELETE(recs->record_time_ints, dxf_time_int_field_t, position, dx_capacity_manager_halfer, failed);
 		return dx_set_error_code(dx_mec_insufficient_memory);
 	}
 	return true;
@@ -421,7 +420,8 @@ bool dx_snapshot_clear_records_array(dx_snapshot_data_ptr_t snapshot_data, dx_sn
 	return true;
 }
 
-bool dx_snapshot_remove_event_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs, size_t position) {
+bool dx_snapshot_remove_event_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
+									 size_t position) {
 	bool failed = false;
 
 	if (snapshot_data == NULL || recs == NULL || position < 0 || position >= recs->records.size) {
@@ -431,22 +431,17 @@ bool dx_snapshot_remove_event_record(dx_snapshot_data_ptr_t snapshot_data, dx_sn
 	dx_string_array_free(recs->record_buffers.elements[position]);
 	dx_free((void*)recs->record_buffers.elements[position]);
 
-	if (!dx_snapshot_delete_record(snapshot_data, recs, position))
-		return false;
-	DX_ARRAY_DELETE(recs->record_time_ints, dxf_time_int_field_t, position,
-		dx_capacity_manager_halfer, failed);
-	if (failed)
-		return dx_set_error_code(dx_mec_insufficient_memory);
-	DX_ARRAY_DELETE(recs->record_buffers, dx_string_array_ptr_t, position,
-		dx_capacity_manager_halfer, failed);
-	if (failed)
-		return dx_set_error_code(dx_mec_insufficient_memory);
+	if (!dx_snapshot_delete_record(snapshot_data, recs, position)) return false;
+	DX_ARRAY_DELETE(recs->record_time_ints, dxf_time_int_field_t, position, dx_capacity_manager_halfer, failed);
+	if (failed) return dx_set_error_code(dx_mec_insufficient_memory);
+	DX_ARRAY_DELETE(recs->record_buffers, dx_string_array_ptr_t, position, dx_capacity_manager_halfer, failed);
+	if (failed) return dx_set_error_code(dx_mec_insufficient_memory);
 	return true;
 }
 
 bool dx_snapshot_remove_event_records(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
-									const dxf_event_data_t* data, int data_count,
-									const dxf_event_params_t* event_params) {
+									  const dxf_event_data_t* data, int data_count,
+									  const dxf_event_params_t* event_params) {
 	int i;
 	dx_snapshot_record_time_ints_t* time_ints = NULL;
 
@@ -461,7 +456,7 @@ bool dx_snapshot_remove_event_records(dx_snapshot_data_ptr_t snapshot_data, dx_s
 		size_t index = 0;
 
 		DX_ARRAY_BINARY_SEARCH(time_ints->elements, 0, time_ints->size, event_params->time_int_field,
-			dx_snapshot_records_comparator, found, index);
+							   dx_snapshot_records_comparator, found, index);
 
 		if (found) {
 			if (!dx_snapshot_remove_event_record(snapshot_data, recs, index)) {
@@ -473,8 +468,8 @@ bool dx_snapshot_remove_event_records(dx_snapshot_data_ptr_t snapshot_data, dx_s
 	return true;
 }
 
-bool dx_snapshot_replace_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
-								size_t position, const dxf_event_data_t new_record) {
+bool dx_snapshot_replace_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs, size_t position,
+								const dxf_event_data_t new_record) {
 	dx_event_free_function_t free_event = NULL;
 	dx_event_copy_function_t clone_event = NULL;
 	dxf_event_data_t new_obj = NULL;
@@ -497,8 +492,7 @@ bool dx_snapshot_replace_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapsho
 	}
 
 	status = dx_snapshot_set_record(snapshot_data, recs, new_obj, position);
-	if (!status)
-		dx_string_array_free(recs->record_buffers.elements[position]);
+	if (!status) dx_string_array_free(recs->record_buffers.elements[position]);
 
 	free_event(new_obj);
 
@@ -506,8 +500,8 @@ bool dx_snapshot_replace_record(dx_snapshot_data_ptr_t snapshot_data, dx_snapsho
 }
 
 bool dx_snapshot_update_event_records(dx_snapshot_data_ptr_t snapshot_data, dx_snapshot_records_ptr_t recs,
-									const dxf_event_data_t* data, int data_count,
-									const dxf_event_params_t* event_params) {
+									  const dxf_event_data_t* data, int data_count,
+									  const dxf_event_params_t* event_params) {
 	int i;
 	dx_snapshot_record_time_ints_t* time_ints = NULL;
 
@@ -522,7 +516,7 @@ bool dx_snapshot_update_event_records(dx_snapshot_data_ptr_t snapshot_data, dx_s
 		size_t index = 0;
 
 		DX_ARRAY_BINARY_SEARCH(time_ints->elements, 0, time_ints->size, event_params->time_int_field,
-			dx_snapshot_records_comparator, found, index);
+							   dx_snapshot_records_comparator, found, index);
 
 		/* add or update record */
 		if (found) {
@@ -530,7 +524,8 @@ bool dx_snapshot_update_event_records(dx_snapshot_data_ptr_t snapshot_data, dx_s
 				return false;
 			}
 		} else {
-			if (!dx_snapshot_add_event_record(snapshot_data, recs, event_params, (const dxf_event_data_t)(data + i), index)) {
+			if (!dx_snapshot_add_event_record(snapshot_data, recs, event_params, (const dxf_event_data_t)(data + i),
+											  index)) {
 				return false;
 			}
 		}
@@ -571,21 +566,18 @@ bool dx_snapshot_call_listeners(dx_snapshot_data_ptr_t snapshot_data, bool new_s
 }
 
 bool dx_is_snapshot_event(const dx_snapshot_data_ptr_t snapshot_data, int event_type,
-						const dxf_event_params_t* event_params,
-						const dxf_event_data_t event_row) {
+						  const dxf_event_params_t* event_params, const dxf_event_data_t event_row) {
 	// comparing by snapshot key
-	return snapshot_data->key == event_params->snapshot_key;
+	//	return snapshot_data->key == event_params->snapshot_key;
+	return (strcmp(snapshot_data->key, event_params->snapshot_key) == 0);
 }
 
-
 bool dx_is_zero_event(dx_event_id_t event_id, const dxf_event_data_t event_row, size_t idx) {
-	if (event_id != dx_eid_order)
-		return false;
+	if (event_id != dx_eid_order) return false;
 	return ((dxf_order_t*)event_row)[idx].size == 0;
 }
 
-void event_listener(int event_type, dxf_const_string_t symbol_name,
-					const dxf_event_data_t* data, int data_count,
+void event_listener(int event_type, dxf_const_string_t symbol_name, const dxf_event_data_t* data, int data_count,
 					const dxf_event_params_t* event_params, void* user_data) {
 	size_t i = 0;
 	dxf_event_flags_t flags = event_params->flags;
@@ -593,7 +585,8 @@ void event_listener(int event_type, dxf_const_string_t symbol_name,
 	bool sb, se, rm, tx;
 
 	sb = IS_FLAG_SET(event_params->flags, dxf_ef_snapshot_begin);
-	se = IS_FLAG_SET(event_params->flags, dxf_ef_snapshot_end) || IS_FLAG_SET(event_params->flags, dxf_ef_snapshot_snip);
+	se =
+		IS_FLAG_SET(event_params->flags, dxf_ef_snapshot_end) || IS_FLAG_SET(event_params->flags, dxf_ef_snapshot_snip);
 	tx = IS_FLAG_SET(event_params->flags, dxf_ef_tx_pending);
 
 	for (i = 0; i < (size_t)data_count; i++) {
@@ -602,7 +595,8 @@ void event_listener(int event_type, dxf_const_string_t symbol_name,
 			continue;
 		}
 
-		rm = IS_FLAG_SET(event_params->flags, dxf_ef_remove_event) || dx_is_zero_event(snapshot_data->event_id, data, i);
+		rm =
+			IS_FLAG_SET(event_params->flags, dxf_ef_remove_event) || dx_is_zero_event(snapshot_data->event_id, data, i);
 
 		/* Ok, process this event */
 		if (sb) {
@@ -619,13 +613,16 @@ void event_listener(int event_type, dxf_const_string_t symbol_name,
 
 		/* Process this event */
 		if (rm) {
-			dx_snapshot_remove_event_records(snapshot_data, &snapshot_data->snapshot_records, data, data_count, event_params);
+			dx_snapshot_remove_event_records(snapshot_data, &snapshot_data->snapshot_records, data, data_count,
+											 event_params);
 		} else {
-			dx_snapshot_update_event_records(snapshot_data, &snapshot_data->snapshot_records, data, data_count, event_params);
+			dx_snapshot_update_event_records(snapshot_data, &snapshot_data->snapshot_records, data, data_count,
+											 event_params);
 		}
 		/* Add to the current tx, if it is pending transaction, may be only with one event, add even "rm" event */
 		if (snapshot_data->has_inc_listeners && snapshot_data->full_snapshot_published) {
-			dx_snapshot_update_event_records(snapshot_data, &snapshot_data->last_tx_records, data, data_count, event_params);
+			dx_snapshot_update_event_records(snapshot_data, &snapshot_data->last_tx_records, data, data_count,
+											 event_params);
 		}
 
 		/* Set end-of-snapshot */
@@ -641,8 +638,7 @@ void event_listener(int event_type, dxf_const_string_t symbol_name,
 		/* And call all consumers  if it is end of transaction */
 		if (snapshot_data->status == dx_status_full) {
 			/* Lock guard to be sure that source list is intact */
-			if (!dx_mutex_lock(&snapshot_data->guard))
-				continue;
+			if (!dx_mutex_lock(&snapshot_data->guard)) continue;
 			dx_snapshot_call_listeners(snapshot_data, !snapshot_data->full_snapshot_published);
 			dx_mutex_unlock(&snapshot_data->guard);
 			/* for sure */
@@ -665,17 +661,83 @@ void event_listener(int event_type, dxf_const_string_t symbol_name,
  * order_source - source for Order records or keyword for MarketMaker; can be NULL also
  * returns 64 bit unsigned decimal
  */
-dxf_ulong_t dx_new_snapshot_key(dx_record_info_id_t record_info_id, dxf_const_string_t symbol,
-								dxf_const_string_t order_source) {
-	dxf_int_t symbol_hash = dx_symbol_name_hasher(symbol);
-	dxf_int_t order_source_hash = (order_source == NULL ? 0 : dx_symbol_name_hasher(order_source));
-	return ((dxf_ulong_t)record_info_id << 56) |
-		((dxf_ulong_t)symbol_hash << 24) |
-		(order_source_hash & SNAPSHOT_KEY_SOURCE_MASK);
+// dxf_ulong_t dx_new_snapshot_key(dx_record_info_id_t record_info_id, dxf_const_string_t symbol,
+//								dxf_const_string_t order_source) {
+//	dxf_int_t symbol_hash = dx_symbol_name_hasher(symbol);
+//	dxf_int_t order_source_hash = (order_source == NULL ? 0 : dx_symbol_name_hasher(order_source));
+//	return ((dxf_ulong_t)record_info_id << 56) |
+//		((dxf_ulong_t)symbol_hash << 24) |
+//		(order_source_hash & SNAPSHOT_KEY_SOURCE_MASK);
+//}
+
+// int dx_snapshots_comparator(dx_snapshot_data_ptr_t s1, dx_snapshot_data_ptr_t s2) {
+//	return DX_NUMERIC_COMPARATOR(s1->key, s2->key);
+//}
+/**
+ * @brief Converts wide char string to char string
+ *
+ * @details New memory is allocated here for converted string, so caller should
+ *          free this memory when conversion result is no longer needed
+ *
+ * @param[in] input wide char string to convert
+ *
+ * @return char* converted string if convertion is successful or NULL otherwise
+ *
+ */
+char* dx_wstr_to_str(dxf_string_t input) {
+	char s[1024];
+	if (NULL == input) return NULL;
+	size_t len = wcstombs(s, input, sizeof(s));
+	if (len > 0) {
+		s[len] = '\0';
+		//      printf("converted string: %s\n", s);
+		return strdup(s);
+	} else {
+		return NULL;
+	}
 }
 
-int dx_snapshots_comparator(dx_snapshot_data_ptr_t s1, dx_snapshot_data_ptr_t s2) {
-	return DX_NUMERIC_COMPARATOR(s1->key, s2->key);
+/**
+ * @brief Creates new snapshot key (to be used as a snapshot identifier in
+ *        snapshots hash map)
+ *
+ * @details New memory is allocated here for snapshot key, so on snapshot closure
+ *          this memory should be freed.
+ *
+ *          New key has a form of:
+ *
+ *             - "{ record_info_id }{ symbol }{ order_source }" if order_source != NULL
+ *
+ *             - "{ record_info_id }{ symbol }" otherwise
+ *
+ * @param[in] record_info_id
+ * @param[in] symbol
+ * @param[in] order_source
+ *
+ * @return char* new snapshot key
+ *
+ */
+char* dx_new_snapshot_key(dx_record_info_id_t record_info_id, dxf_const_string_t symbol,
+						  dxf_const_string_t order_source) {
+	char* s_symbol = dx_wstr_to_str(symbol);
+	char* s_order_source = dx_wstr_to_str(order_source);
+
+	char s_record_info_id[64];
+	snprintf(s_record_info_id, 64, "%d", record_info_id);
+
+	char* key;
+	if (NULL == s_order_source) {
+		key = dx_calloc(strlen(s_symbol) + strlen(s_record_info_id) + 1, sizeof(char));
+		sprintf(key, "%s%s", s_record_info_id, s_symbol);
+	} else {
+		key = dx_calloc(strlen(s_symbol) + strlen(s_record_info_id) + strlen(s_order_source) + 1, sizeof(char));
+		sprintf(key, "%s%s%s", s_record_info_id, s_symbol, s_order_source);
+	}
+
+	if (NULL != s_symbol) free(s_symbol);
+	if (NULL != s_order_source) free(s_order_source);
+
+	return key;
 }
 
 void dx_clear_snapshot_listener_array(dx_snapshot_listener_array_t* listeners) {
@@ -686,18 +748,17 @@ void dx_clear_snapshot_listener_array(dx_snapshot_listener_array_t* listeners) {
 	listeners->capacity = 0;
 }
 
-int dx_snapshot_listener_comparator(dx_snapshot_listener_context_t e1,
-									dx_snapshot_listener_context_t e2) {
+int dx_snapshot_listener_comparator(dx_snapshot_listener_context_t e1, dx_snapshot_listener_context_t e2) {
 	return e1.incremental == e2.incremental ? DX_NUMERIC_COMPARATOR(e1.full_listener, e2.full_listener) : -1;
 }
 
-size_t dx_find_snapshot_listener_in_array(dx_snapshot_listener_array_t* listeners,
-									bool incremental, void *listener, OUT bool* found) {
+size_t dx_find_snapshot_listener_in_array(dx_snapshot_listener_array_t* listeners, bool incremental, void* listener,
+										  OUT bool* found) {
 	size_t listener_index;
-	dx_snapshot_listener_context_t listener_context = { incremental, false, listener, NULL };
+	dx_snapshot_listener_context_t listener_context = {incremental, false, listener, NULL};
 
-	DX_ARRAY_SEARCH(listeners->elements, 0, listeners->size, listener_context,
-		dx_snapshot_listener_comparator, false, *found, listener_index);
+	DX_ARRAY_SEARCH(listeners->elements, 0, listeners->size, listener_context, dx_snapshot_listener_comparator, false,
+					*found, listener_index);
 
 	return listener_index;
 }
@@ -714,10 +775,10 @@ bool dx_free_snapshot_data(dx_snapshot_data_ptr_t snapshot_data) {
 	dx_snapshot_clear_records_array(snapshot_data, &snapshot_data->snapshot_records);
 	dx_snapshot_clear_records_array(snapshot_data, &snapshot_data->last_tx_records);
 
-	if (snapshot_data->symbol != NULL)
-		dx_free(snapshot_data->symbol);
-	if (snapshot_data->order_source != NULL)
-		dx_free(snapshot_data->order_source);
+	if (snapshot_data->symbol != NULL) dx_free(snapshot_data->symbol);
+	if (snapshot_data->order_source != NULL) dx_free(snapshot_data->order_source);
+
+	dx_free(snapshot_data->key);
 
 	dx_mutex_destroy(&snapshot_data->guard);
 	dx_free(snapshot_data);
@@ -730,15 +791,11 @@ bool dx_free_snapshot_data(dx_snapshot_data_ptr_t snapshot_data) {
  */
 /* -------------------------------------------------------------------------- */
 
-dxf_snapshot_t dx_create_snapshot(dxf_connection_t connection,
-								dxf_subscription_t subscription,
-								dx_event_id_t event_id,
-								dx_record_info_id_t record_info_id,
-								dxf_const_string_t symbol,
-								dxf_const_string_t order_source,
-								dxf_long_t time) {
+dxf_snapshot_t dx_create_snapshot(dxf_connection_t connection, dxf_subscription_t subscription, dx_event_id_t event_id,
+								  dx_record_info_id_t record_info_id, dxf_const_string_t symbol,
+								  dxf_const_string_t order_source, dxf_long_t time) {
 	dx_snapshot_subscription_connection_context_t* context = NULL;
-	dx_snapshot_data_t *snapshot_data = NULL;
+	dx_snapshot_data_t* snapshot_data = NULL;
 	bool failed = false;
 	bool found = false;
 	bool res = false;
@@ -776,8 +833,7 @@ dxf_snapshot_t dx_create_snapshot(dxf_connection_t connection,
 	snapshot_data->event_type = event_types;
 	snapshot_data->symbol = dx_create_string_src(symbol);
 	snapshot_data->time = time;
-	if (order_source != NULL)
-		snapshot_data->order_source = dx_create_string_src(order_source);
+	if (order_source != NULL) snapshot_data->order_source = dx_create_string_src(order_source);
 	snapshot_data->status = dx_status_full;
 	snapshot_data->full_snapshot_published = true;
 	snapshot_data->sscc = context;
@@ -793,21 +849,23 @@ dxf_snapshot_t dx_create_snapshot(dxf_connection_t connection,
 		return dx_invalid_snapshot;
 	}
 
-	if (context->snapshots_array.size > 0) {
-		DX_ARRAY_BINARY_SEARCH(context->snapshots_array.elements, 0, context->snapshots_array.size,
-			snapshot_data, dx_snapshots_comparator, found, position);
-		if (found) {
-			dx_free_snapshot_data(snapshot_data);
-			dx_set_error_code(dx_ssec_snapshot_exist);
-			dx_mutex_unlock(&(context->guard));
-			return dx_invalid_snapshot;
-		}
+	//	if (context->snapshots_array.size > 0) {
+	//		DX_ARRAY_BINARY_SEARCH(context->snapshots_array.elements, 0, context->snapshots_array.size,
+	//			snapshot_data, dx_snapshots_comparator, found, position);
+	//		if (found) {
+	if (NULL != map_get(&(context->snapshots_map), snapshot_data->key)) {
+		dx_free_snapshot_data(snapshot_data);
+		dx_set_error_code(dx_ssec_snapshot_exist);
+		dx_mutex_unlock(&(context->guard));
+		return dx_invalid_snapshot;
 	}
+	//	}
 
 	/* add snapshot to array */
-	DX_ARRAY_INSERT(context->snapshots_array, dx_snapshot_data_ptr_t, snapshot_data, position,
-		dx_capacity_manager_halfer, failed);
-	if (failed) {
+	//	DX_ARRAY_INSERT(context->snapshots_array, dx_snapshot_data_ptr_t, snapshot_data, position,
+	//		dx_capacity_manager_halfer, failed);
+	//	if (failed) {
+	if (map_set(&(context->snapshots_map), snapshot_data->key, snapshot_data) < 0) {
 		dx_free_snapshot_data(snapshot_data);
 		snapshot_data = dx_invalid_snapshot;
 	}
@@ -833,19 +891,21 @@ bool dx_close_snapshot(dxf_snapshot_t snapshot) {
 	CHECKED_CALL(dx_mutex_lock, &(context->guard));
 
 	/* remove item from snapshots_array */
-	DX_ARRAY_BINARY_SEARCH(context->snapshots_array.elements, 0, context->snapshots_array.size,
-		snapshot_data, dx_snapshots_comparator, found, position);
-	if (found) {
-		DX_ARRAY_DELETE(context->snapshots_array, dx_snapshot_data_ptr_t, position,
-			dx_capacity_manager_halfer, failed);
-		if (failed) {
-			dx_set_error_code(dx_mec_insufficient_memory);
-		}
+	//	DX_ARRAY_BINARY_SEARCH(context->snapshots_array.elements, 0, context->snapshots_array.size,
+	//		snapshot_data, dx_snapshots_comparator, found, position);
+	dx_snapshot_data_ptr_t cached_snapshot = map_get(&(context->snapshots_map), snapshot_data->key);
+	//	if (found) {
+	if (NULL != cached_snapshot) {
+		//		DX_ARRAY_DELETE(context->snapshots_array, dx_snapshot_data_ptr_t, position,
+		//			dx_capacity_manager_halfer, failed);
+		//		if (failed) {
+		//			dx_set_error_code(dx_mec_insufficient_memory);
+		//		}
+		map_remove(&(context->snapshots_map), snapshot_data->key);
 		dx_free_snapshot_data(snapshot_data);
 		dx_mutex_unlock(&(context->guard));
 		return !failed;
-	}
-	else {
+	} else {
 		dx_mutex_unlock(&(context->guard));
 		return dx_set_error_code(dx_ssec_invalid_snapshot_id);
 	}
@@ -875,13 +935,9 @@ bool dx_add_snapshot_listener(dxf_snapshot_t snapshot, dxf_snapshot_listener_t l
 
 	{
 		dx_snapshot_listener_context_t listener_context = {
-			.incremental = false,
-			.full_snapshot_seen = false,
-			.full_listener = listener,
-			.user_data = user_data
-		};
-		DX_ARRAY_INSERT(snapshot_data->listeners, dx_snapshot_listener_context_t, listener_context,
-			listener_index, dx_capacity_manager_halfer, failed);
+			.incremental = false, .full_snapshot_seen = false, .full_listener = listener, .user_data = user_data};
+		DX_ARRAY_INSERT(snapshot_data->listeners, dx_snapshot_listener_context_t, listener_context, listener_index,
+						dx_capacity_manager_halfer, failed);
 	}
 
 	return dx_mutex_unlock(&(snapshot_data->guard)) && !failed;
@@ -914,7 +970,7 @@ bool dx_remove_snapshot_listener(dxf_snapshot_t snapshot, dxf_snapshot_listener_
 	*/
 
 	DX_ARRAY_DELETE(snapshot_data->listeners, dx_snapshot_listener_context_t, listener_index,
-		dx_capacity_manager_halfer, failed);
+					dx_capacity_manager_halfer, failed);
 
 	return dx_mutex_unlock(&snapshot_data->guard) && !failed;
 }
@@ -942,13 +998,9 @@ bool dx_add_snapshot_inc_listener(dxf_snapshot_t snapshot, dxf_snapshot_inc_list
 
 	{
 		dx_snapshot_listener_context_t listener_context = {
-			.incremental = true,
-			.full_snapshot_seen = false,
-			.inc_listener = listener,
-			.user_data = user_data
-		};
-		DX_ARRAY_INSERT(snapshot_data->listeners, dx_snapshot_listener_context_t, listener_context,
-			listener_index, dx_capacity_manager_halfer, failed);
+			.incremental = true, .full_snapshot_seen = false, .inc_listener = listener, .user_data = user_data};
+		DX_ARRAY_INSERT(snapshot_data->listeners, dx_snapshot_listener_context_t, listener_context, listener_index,
+						dx_capacity_manager_halfer, failed);
 		snapshot_data->has_inc_listeners = true;
 	}
 
@@ -977,17 +1029,18 @@ bool dx_remove_snapshot_inc_listener(dxf_snapshot_t snapshot, dxf_snapshot_inc_l
 	}
 
 	DX_ARRAY_DELETE(snapshot_data->listeners, dx_snapshot_listener_context_t, listener_index,
-		dx_capacity_manager_halfer, failed);
+					dx_capacity_manager_halfer, failed);
 
 	/* Check, do we have anymore incremental listeners */
-	for (listener_index = 0; !snapshot_data->has_inc_listeners && listener_index < snapshot_data->listeners.size; listener_index++) {
+	for (listener_index = 0; !snapshot_data->has_inc_listeners && listener_index < snapshot_data->listeners.size;
+		 listener_index++) {
 		snapshot_data->has_inc_listeners |= snapshot_data->listeners.elements[listener_index].incremental;
 	}
 
 	return dx_mutex_unlock(&snapshot_data->guard) && !failed;
 }
 
-bool dx_get_snapshot_subscription(dxf_snapshot_t snapshot, OUT dxf_subscription_t *subscription) {
+bool dx_get_snapshot_subscription(dxf_snapshot_t snapshot, OUT dxf_subscription_t* subscription) {
 	if (snapshot == dx_invalid_snapshot) {
 		return dx_set_error_code(dx_ssec_invalid_snapshot_id);
 	}
