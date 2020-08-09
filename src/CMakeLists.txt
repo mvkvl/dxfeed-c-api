@@ -62,6 +62,7 @@ if (NOT ${APP_VERSION} STREQUAL "")
 endif ()
 
 include_directories(${INCLUDE_DIR})
+include_directories(BEFORE ../thirdparty/map)
 
 set(EXPORT_HEADERS
     ${INCLUDE_DIR}/DXErrorCodes.h
@@ -128,6 +129,7 @@ set(PARSER_TESTS
     )
 
 set(SOURCE_FILES
+    ../thirdparty/map/map.c
     Candle.c
     ClientMessageProcessor.c
     ConnectionContextData.c
@@ -304,6 +306,7 @@ elseif(MACOSX)
             INSTALL_RPATH "@executable_path/."
     )
 endif ()
+
 
 if (NOT DISABLE_TLS)
     if (WIN32)
